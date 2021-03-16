@@ -17,7 +17,7 @@ type PingPacket struct {
 func NewPacket(seq int) *PingPacket {
 	obj := &PingPacket{}
 	obj.Seq = int32(seq)
-	obj.Ts = time.Now().Unix()
+	obj.Ts = time.Now().UnixNano() / 1e6
 	return obj
 }
 
@@ -96,22 +96,21 @@ func client(remote string) {
 			return
 		}
 
+		fmt.Println(time.Now().UTC(), "sent ping")
 		// 接收数据
 		data := make([]byte, 4096)
-		read, remoteAddr, err := socket.ReadFromUDP(data)
+		read, _, err := socket.ReadFromUDP(data)
 		if err != nil {
 			fmt.Println("读取数据失败!", err)
 			return
 		}
-
-		fmt.Println(read, remoteAddr)
 
 		response, err := Decode(data[:read])
 		if err != nil {
 			fmt.Println("解析数据失败!", err)
 			os.Exit(0)
 		}
-		fmt.Println("ping %s seq:%d rtt%d", remote, response.Seq, (time.Now().Unix() - response.Ts))
+		fmt.Println(time.Now().UTC(), "ping ", remote, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
 		time.Sleep(time.Second)
 	}
 }
@@ -121,7 +120,7 @@ func main() {
 	remoteAddr := ""
 	args := os.Args
 
-	// client("192.168.137.1")
+	client("192.168.137.1")
 	for index, value := range args {
 		if index == 1 && value == "-c" {
 			isServer = false
