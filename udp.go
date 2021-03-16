@@ -85,10 +85,10 @@ func client(remote string) {
 	}
 	defer socket.Close()
 	seq := 1
-	// 发送数据
 	for {
 		packet := NewPacket(seq)
 		seq++
+		// 发送数据
 		buff, err := packet.Encode()
 		_, err = socket.Write(buff)
 		if err != nil {
@@ -98,11 +98,12 @@ func client(remote string) {
 
 		fmt.Println(time.Now().UTC(), "sent ping")
 		// 接收数据
+		socket.SetReadDeadline(time.Now().Add(time.Second))
 		data := make([]byte, 4096)
 		read, _, err := socket.ReadFromUDP(data)
 		if err != nil {
-			fmt.Println("读取数据失败!", err)
-			return
+			fmt.Println(time.Now().UTC(), "recv ping ", remote, packet.Seq, "time out")
+			continue
 		}
 
 		response, err := Decode(data[:read])
@@ -120,7 +121,7 @@ func main() {
 	remoteAddr := ""
 	args := os.Args
 
-	client("192.168.137.1")
+	// client("192.168.137.1")
 	for index, value := range args {
 		if index == 1 && value == "-c" {
 			isServer = false
