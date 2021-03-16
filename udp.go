@@ -85,7 +85,26 @@ func client(remote string) {
 	}
 	defer socket.Close()
 	seq := 1
+	go func(socket *net.UDPConn) {
+		for {
+			socket.SetReadDeadline(time.Now().Add(time.Second))
+			data := make([]byte, 4096)
+			read, _, err := socket.ReadFromUDP(data)
+			if err != nil {
+				// fmt.Println(time.Now().UTC(), "recv ping ", socket.RemoteAddr().String(), "time out")
+				continue
+			}
+
+			response, err := Decode(data[:read])
+			if err != nil {
+				fmt.Println("解析数据失败!", err)
+				os.Exit(0)
+			}
+			fmt.Println(time.Now().UTC(), "ping ", remote, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
+		}
+	}(socket)
 	for {
+		// fmt.Println(time.Now().UTC(), "New loop start write")
 		packet := NewPacket(seq)
 		seq++
 		// 发送数据
@@ -96,22 +115,9 @@ func client(remote string) {
 			return
 		}
 
-		fmt.Println(time.Now().UTC(), "sent ping")
+		// fmt.Println(time.Now().UTC(), "sent ping write over start recv ")
 		// 接收数据
-		socket.SetReadDeadline(time.Now().Add(time.Second))
-		data := make([]byte, 4096)
-		read, _, err := socket.ReadFromUDP(data)
-		if err != nil {
-			fmt.Println(time.Now().UTC(), "recv ping ", remote, packet.Seq, "time out")
-			continue
-		}
 
-		response, err := Decode(data[:read])
-		if err != nil {
-			fmt.Println("解析数据失败!", err)
-			os.Exit(0)
-		}
-		fmt.Println(time.Now().UTC(), "ping ", remote, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
 		time.Sleep(time.Second)
 	}
 }
@@ -121,7 +127,7 @@ func main() {
 	remoteAddr := ""
 	args := os.Args
 
-	// client("192.168.137.1")
+	client("192.168.137.1")
 	for index, value := range args {
 		if index == 1 && value == "-c" {
 			isServer = false
