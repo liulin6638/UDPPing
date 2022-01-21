@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -43,12 +45,10 @@ func Decode(b []byte) (*PingPacket, error) {
 	return obj, nil
 }
 
-func server() {
+func server(port int) {
 	// 创建监听
-	socket, err := net.ListenUDP("udp4", &net.UDPAddr{
-		IP:   net.IPv4(0, 0, 0, 0),
-		Port: 9999,
-	})
+	udpAddr, _ := net.ResolveUDPAddr("udp", "0.0.0.0:"+strconv.Itoa(port))
+	socket, err := net.ListenUDP("udp4", udpAddr)
 	if err != nil {
 		fmt.Println("监听失败!", err)
 		return
@@ -73,11 +73,11 @@ func server() {
 	}
 }
 
-func client(remote string) {
+func client(ip string, port int) {
 	// 创建连接
 	socket, err := net.DialUDP("udp4", nil, &net.UDPAddr{
-		IP:   net.ParseIP(remote),
-		Port: 9999,
+		IP:   net.ParseIP(ip),
+		Port: port,
 	})
 	if err != nil {
 		fmt.Println("连接失败!", err)
@@ -100,7 +100,7 @@ func client(remote string) {
 				fmt.Println("解析数据失败!", err)
 				os.Exit(0)
 			}
-			fmt.Println(time.Now().UTC(), "ping ", remote, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
+			fmt.Println(time.Now().UTC(), "ping ", ip, ":", port, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
 		}
 	}(socket)
 	for {
@@ -123,24 +123,70 @@ func client(remote string) {
 }
 
 func main() {
-	isServer := true
-	remoteAddr := ""
+	isServer := 0
+	serverAddr := ""
+	serverPort := 0
+	serverAddrIndex := 0
+	serverPortIndex := 0
+	isHelp := false
 	args := os.Args
 
-	client("192.168.137.1")
 	for index, value := range args {
-		if index == 1 && value == "-c" {
-			isServer = false
+		if value == "-h" || value == "?" || value == "--help" {
+			isHelp = true
+			continue
 		}
-		if index == 2 && isServer == false {
-			remoteAddr = value
+
+		if value == "-c" {
+			isServer = 1
+			serverAddrIndex = index
+			continue
+		}
+		if isServer == 1 && index-1 == serverAddrIndex {
+			serverAddr = value
+			continue
+		}
+
+		if value == "-p" && isServer == 1 {
+			serverPortIndex = index
+			continue
+		}
+		if isServer == 1 && index-1 == serverPortIndex {
+			serverPort, _ = strconv.Atoi(value)
+			continue
+		}
+
+		if value == "-s" && isServer == 0 {
+			isServer = 2
+			serverPortIndex = index
+			continue
+		}
+		if isServer == 2 && index-1 == serverPortIndex {
+			serverPort, _ = strconv.Atoi(value)
+			continue
 		}
 	}
 
-	if isServer {
-		server()
+	if isHelp {
+		fmt.Println("As Client -c serverip:port or -c serverip -p port")
+		fmt.Println("As Server -s port")
+		return
+	}
+
+	if serverPort == 0 && isServer == 1 {
+		str := strings.Split(serverAddr, ":")
+		serverAddr = str[0]
+		serverPort, _ = strconv.Atoi(str[1])
+	}
+
+	if isServer == 2 {
+		server(serverPort)
+	} else if isServer == 1 {
+		client(serverAddr, serverPort)
 	} else {
-		client(remoteAddr)
+		fmt.Println("As Client -c serverip:port or -c serverip -p port")
+		fmt.Println("As Server -s port")
+		return
 	}
 
 }
