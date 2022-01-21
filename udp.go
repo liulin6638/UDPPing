@@ -45,6 +45,41 @@ func Decode(b []byte) (*PingPacket, error) {
 	return obj, nil
 }
 
+type Stat struct {
+	minSeq    int32
+	maxSeq    int32
+	packetNum int32
+	avgRtt    int64
+	maxRtt    int64
+	minRtt    int64
+}
+
+func (s *Stat) OnRecvPacket(p *PingPacket) {
+	s.packetNum++
+	if s.maxSeq == 0 && s.minSeq == 0 {
+		s.minSeq = p.Seq
+		s.maxSeq = p.Seq
+	}
+
+	if s.minSeq > p.Seq {
+		s.minSeq = p.Seq
+	}
+
+	if s.maxSeq < p.Seq {
+		s.maxSeq = p.Seq
+	}
+
+	s.avgRtt = (s.avgRtt*8 + (time.Now().UnixNano()/1e6-p.Ts)*2) / 10
+}
+
+func (s *Stat) Stat() {
+	expected := s.maxSeq - s.minSeq + 1
+
+	loss := (expected - s.packetNum) * 100 / expected
+
+	fmt.Println(time.Now().UTC(), "Loss:", loss, " Max:", s.maxSeq, " Min:", s.minSeq, " Num", s.packetNum, " RttAvg:", s.avgRtt, "ms")
+}
+
 func server(port int) {
 	// 创建监听
 	udpAddr, _ := net.ResolveUDPAddr("udp", "0.0.0.0:"+strconv.Itoa(port))
@@ -75,17 +110,18 @@ func server(port int) {
 
 func client(ip string, port int) {
 	// 创建连接
-	socket, err := net.DialUDP("udp4", nil, &net.UDPAddr{
-		IP:   net.ParseIP(ip),
-		Port: port,
-	})
+	udpAddr, _ := net.ResolveUDPAddr("udp", ip+":"+strconv.Itoa(port))
+	socket, err := net.DialUDP("udp4", nil, udpAddr)
 	if err != nil {
 		fmt.Println("连接失败!", err)
 		return
 	}
 	defer socket.Close()
+	fmt.Println("Start Client Success Remote: ", socket.RemoteAddr().String())
 	seq := 1
 	go func(socket *net.UDPConn) {
+		var stat Stat
+		lastPrint := time.Now().Unix()
 		for {
 			socket.SetReadDeadline(time.Now().Add(time.Second))
 			data := make([]byte, 4096)
@@ -100,7 +136,11 @@ func client(ip string, port int) {
 				fmt.Println("解析数据失败!", err)
 				os.Exit(0)
 			}
-			fmt.Println(time.Now().UTC(), "ping ", ip, ":", port, response.Seq, (time.Now().UnixNano()/1e6 - response.Ts))
+			stat.OnRecvPacket(response)
+			if time.Now().Unix() > lastPrint+1 {
+				stat.Stat()
+				lastPrint = time.Now().Unix()
+			}
 		}
 	}(socket)
 	for {
@@ -182,6 +222,7 @@ func main() {
 	if isServer == 2 {
 		server(serverPort)
 	} else if isServer == 1 {
+		fmt.Println("Client Remote:", serverAddr, " ", serverPort)
 		client(serverAddr, serverPort)
 	} else {
 		fmt.Println("As Client -c serverip:port or -c serverip -p port")
